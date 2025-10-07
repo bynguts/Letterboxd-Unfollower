@@ -6,10 +6,13 @@ import nest_asyncio
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
-import plotly.express as px
 import plotly.graph_objects as go
+import datetime
+import altair as alt
 
-
+# =======================================
+# SETUP
+# =======================================
 nest_asyncio.apply()
 semaphore = asyncio.Semaphore(5)
 
@@ -88,7 +91,7 @@ async def main_async(username):
 # =======================================
 # STREAMLIT UI
 # =======================================
-st.set_page_config(page_title="Letterboxd Unfollower Checker", layout="centered")
+st.set_page_config(page_title="Letterboxd Unfollower Tracker", layout="centered")
 
 # ---------- CUSTOM STYLING ----------
 st.markdown("""
@@ -136,8 +139,9 @@ username = st.text_input("👤 Enter your Letterboxd username:", placeholder="e.
 center_btn = st.columns(3)[1]
 go = center_btn.button("✨ Check Now!", use_container_width=True)
 
-import datetime
-
+# =======================================
+# MAIN EXECUTION
+# =======================================
 if go and username:
     with st.status(f"Fetching data for @{username}...", expanded=True) as status:
         with st.spinner("Loading profile..."):
@@ -157,18 +161,12 @@ if go and username:
     old_data = pd.read_csv(follower_file) if os.path.exists(follower_file) else pd.DataFrame(columns=["username", "last_seen_date"])
     old_followers = set(old_data["username"].tolist())
 
-    # --- Recent Follows ---
     new_followers = set_followers - old_followers
     recent_follows = [{"username": u, "follow_date": current_date} for u in new_followers]
-
-    # --- Recent Unfollows ---
     recent_unfollows = old_followers - set_followers
     recent_unfollows_list = [{"username": u, "unfollow_date": current_date} for u in recent_unfollows]
 
-    # --- Update Data File ---
-    new_df = pd.DataFrame(
-        [{"username": u, "last_seen_date": current_date} for u in set_followers]
-    )
+    new_df = pd.DataFrame([{"username": u, "last_seen_date": current_date} for u in set_followers])
     new_df.to_csv(follower_file, index=False)
 
     if recent_unfollows:
@@ -179,30 +177,28 @@ if go and username:
         else:
             pd.DataFrame(recent_unfollows_list).to_csv(unfollow_log, index=False)
 
-    import altair as alt
+    # ---------- TIMELINE VISUALIZATION ----------
+    timeline_data = []
+    for item in recent_follows:
+        timeline_data.append({"username": item["username"], "date": item["follow_date"], "action": "Followed"})
+    for item in recent_unfollows_list:
+        timeline_data.append({"username": item["username"], "date": item["unfollow_date"], "action": "Unfollowed"})
 
-timeline_data = []
-for item in recent_follows:
-    timeline_data.append({"username": item["username"], "date": item["follow_date"], "action": "Followed"})
-for item in recent_unfollows_list:
-    timeline_data.append({"username": item["username"], "date": item["unfollow_date"], "action": "Unfollowed"})
-
-if timeline_data:
-    df_timeline = pd.DataFrame(timeline_data)
-    chart = (
-        alt.Chart(df_timeline)
-        .mark_circle(size=150)
-        .encode(
-            x="date:T",
-            y=alt.Y("action:N", title=None),
-            color=alt.Color("action", scale=alt.Scale(range=["#3DDC84", "#FF6B6B"])),
-            tooltip=["username", "action", "date"]
+    if timeline_data:
+        df_timeline = pd.DataFrame(timeline_data)
+        chart = (
+            alt.Chart(df_timeline)
+            .mark_circle(size=150)
+            .encode(
+                x="date:T",
+                y=alt.Y("action:N", title=None),
+                color=alt.Color("action", scale=alt.Scale(range=["#3DDC84", "#FF6B6B"])),
+                tooltip=["username", "action", "date"]
+            )
+            .properties(height=300, title="🕓 Recent Follow & Unfollow Timeline")
+            .interactive()
         )
-        .properties(height=300, title="🕓 Recent Follow & Unfollow Timeline")
-        .interactive()
-    )
-    st.altair_chart(chart, use_container_width=True)
-
+        st.altair_chart(chart, use_container_width=True)
 
     # --- Metrics ---
     unfollowers = [u for u in following if u["username"] not in set_followers]
@@ -227,57 +223,40 @@ if timeline_data:
         else:
             st.info("No one unfollowed you recently.")
 
+    # ---------- VISUAL INSIGHTS ----------
     st.divider()
-st.subheader("📊 Visual Insights")
+    st.subheader("📊 Visual Insights")
 
-# Data untuk grafik
-stats = {
-    "Following": len(following),
-    "Followers": len(followers),
-    "Doesn't Follow Back": len(unfollowers),
-    "You Don't Follow Back": len(unfollowing)
-}
+    stats = {
+        "Following": len(following),
+        "Followers": len(followers),
+        "Doesn't Follow Back": len(unfollowers),
+        "You Don't Follow Back": len(unfollowing)
+    }
 
-# --- Animated Ring Chart (Plotly Doughnut) ---
-fig = go.Figure(
-    data=[go.Pie(
-        labels=list(stats.keys()),
-        values=list(stats.values()),
-        hole=0.55,
-        marker=dict(colors=["#4C9EFF", "#3DDC84", "#FF6B6B", "#F5A623"],
-                    line=dict(color="#0E1117", width=2)),
-        hoverinfo="label+percent",
-        textinfo="value",
-        textfont=dict(size=18, color="white")
-    )]
-)
+    fig = go.Figure(
+        data=[go.Pie(
+            labels=list(stats.keys()),
+            values=list(stats.values()),
+            hole=0.55,
+            marker=dict(colors=["#4C9EFF", "#3DDC84", "#FF6B6B", "#F5A623"],
+                        line=dict(color="#0E1117", width=2)),
+            hoverinfo="label+percent",
+            textinfo="value",
+            textfont=dict(size=18, color="white")
+        )]
+    )
 
-fig.update_traces(pull=[0.05, 0, 0.05, 0], rotation=45)
-fig.update_layout(
-    showlegend=True,
-    paper_bgcolor="#0E1117",
-    plot_bgcolor="#0E1117",
-    font=dict(color="white", size=16),
-    annotations=[dict(text="Letterboxd Stats", x=0.5, y=0.5, font_size=20, showarrow=False)]
-)
+    fig.update_traces(pull=[0.05, 0, 0.05, 0], rotation=45)
+    fig.update_layout(
+        showlegend=True,
+        paper_bgcolor="#0E1117",
+        plot_bgcolor="#0E1117",
+        font=dict(color="white", size=16),
+        annotations=[dict(text="Letterboxd Stats", x=0.5, y=0.5, font_size=20, showarrow=False)]
+    )
 
-st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-
-
-    # ---------- DATA ----------
-    set_followers = {u["username"] for u in followers}
-    set_following = {u["username"] for u in following}
-    unfollowers = [u for u in following if u["username"] not in set_followers]
-    unfollowing = [u for u in followers if u["username"] not in set_following]
-
-    os.makedirs("data", exist_ok=True)
-    file_path = f"data/{username}_followers.csv"
-    old_followers = set()
-    if os.path.exists(file_path):
-        old_followers = set(pd.read_csv(file_path)["username"].tolist())
-    pd.DataFrame(list(set_followers), columns=["username"]).to_csv(file_path, index=False)
-    all_time_unfollowers = list(old_followers - set_followers)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # ---------- METRICS ----------
     st.markdown("<div class='fade-in'>", unsafe_allow_html=True)
@@ -338,5 +317,3 @@ st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         "<a href='https://letterboxd.com/rafilajhh/' style='color:#1db954;'>rafilajhh</a></p>",
         unsafe_allow_html=True,
     )
-
-
