@@ -5,10 +5,8 @@ import asyncio
 import nest_asyncio
 import pandas as pd
 import os
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
 import datetime
-import altair as alt
+import plotly.graph_objects as go
 
 # =======================================
 # SETUP
@@ -16,9 +14,6 @@ import altair as alt
 nest_asyncio.apply()
 semaphore = asyncio.Semaphore(5)
 
-# =======================================
-# FETCH PAGE
-# =======================================
 async def fetch_page(session, url):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -93,75 +88,56 @@ async def main_async(username):
 # =======================================
 st.set_page_config(page_title="Letterboxd Unfollower Tracker", layout="centered")
 
-# ---------- CUSTOM STYLING ----------
 st.markdown("""
     <style>
-    body {
-        background-color: #0e0e0e;
-        color: #f5f5f5;
-    }
+    body {background-color:#0e0e0e;color:#f5f5f5;}
     .main {
         max-width: 850px;
         margin: auto;
         background-color: #141414;
         padding: 40px;
         border-radius: 20px;
-        box-shadow: 0px 0px 25px rgba(0,0,0,0.5);
-        transition: 0.4s ease;
+        box-shadow: 0 0 25px rgba(0,0,0,0.5);
     }
-    .main:hover {
-        box-shadow: 0px 0px 40px rgba(255,255,255,0.05);
-    }
-    .stProgress > div > div > div > div {
-        background-color: #1db954;
-    }
-    h1, h2, h3, h4 {
-        text-align: center !important;
-    }
-    div[data-testid="stMetricValue"] {
-        color: #1db954;
-    }
-    .fade-in {
-        animation: fadeIn 1.5s ease;
-    }
-    @keyframes fadeIn {
-        from {opacity: 0; transform: translateY(10px);}
-        to {opacity: 1; transform: translateY(0);}
+    h1,h2,h3 {text-align:center;}
+    .fade-in {animation: fadeIn 1.5s ease;}
+    @keyframes fadeIn {from {opacity:0;} to {opacity:1;}}
+    .activity-box {
+        border: 1px solid #333;
+        border-radius: 10px;
+        padding: 15px;
+        background-color: #1a1a1a;
+        margin-bottom: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='fade-in'>🎬 Letterboxd Unfollower Tracker</h1>", unsafe_allow_html=True)
-st.write("<p style='text-align:center;'>Track followers, unfollowers, and compare trends — all beautifully visualized.</p>", unsafe_allow_html=True)
+st.write("<p style='text-align:center;'>Track followers, unfollowers, and relationship trends — clean & visualized.</p>", unsafe_allow_html=True)
 st.divider()
 
 username = st.text_input("👤 Enter your Letterboxd username:", placeholder="e.g. rafilajhh", key="uname")
 center_btn = st.columns(3)[1]
 check_btn = center_btn.button("✨ Check Now!", use_container_width=True)
 
-# =======================================
-# MAIN EXECUTION
-# =======================================
 if check_btn and username:
     with st.status(f"Fetching data for @{username}...", expanded=True) as status:
-        with st.spinner("Loading profile..."):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            followers_count, following_count, followers, following = loop.run_until_complete(main_async(username))
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        followers_count, following_count, followers, following = loop.run_until_complete(main_async(username))
         status.update(label="✅ Data fetched successfully!", state="complete")
 
     current_date = datetime.date.today().isoformat()
-    set_followers = {u["username"] for u in followers}
-    set_following = {u["username"] for u in following}
-
     os.makedirs("data", exist_ok=True)
     follower_file = f"data/{username}_followers.csv"
     unfollow_log = f"data/{username}_unfollow_history.csv"
 
-    old_data = pd.read_csv(follower_file) if os.path.exists(follower_file) else pd.DataFrame(columns=["username", "last_seen_date"])
+    set_followers = {u["username"] for u in followers}
+    set_following = {u["username"] for u in following}
+
+    old_data = pd.read_csv(follower_file) if os.path.exists(follower_file) else pd.DataFrame(columns=["username"])
     old_followers = set(old_data["username"].tolist())
 
-    # --- Track New and Lost Followers ---
     new_followers = set_followers - old_followers
     recent_follows = [{"username": u, "follow_date": current_date} for u in new_followers]
     recent_unfollows = old_followers - set_followers
@@ -170,61 +146,24 @@ if check_btn and username:
     new_df = pd.DataFrame([{"username": u, "last_seen_date": current_date} for u in set_followers])
     new_df.to_csv(follower_file, index=False)
 
-    if recent_unfollows:
-        if os.path.exists(unfollow_log):
-            old_unf = pd.read_csv(unfollow_log)
-            new_unf = pd.DataFrame(recent_unfollows_list)
-            pd.concat([old_unf, new_unf], ignore_index=True).to_csv(unfollow_log, index=False)
-        else:
-            pd.DataFrame(recent_unfollows_list).to_csv(unfollow_log, index=False)
-
-    # ---------- TIMELINE VISUALIZATION ----------
-    timeline_data = []
-    for item in recent_follows:
-        timeline_data.append({"username": item["username"], "date": item["follow_date"], "action": "Followed"})
-    for item in recent_unfollows_list:
-        timeline_data.append({"username": item["username"], "date": item["unfollow_date"], "action": "Unfollowed"})
-
-    if timeline_data:
-        df_timeline = pd.DataFrame(timeline_data)
-        chart = (
-            alt.Chart(df_timeline)
-            .mark_circle(size=150)
-            .encode(
-                x="date:T",
-                y=alt.Y("action:N", title=None),
-                color=alt.Color("action", scale=alt.Scale(range=["#3DDC84", "#FF6B6B"])),
-                tooltip=["username", "action", "date"]
-            )
-            .properties(height=300, title="🕓 Recent Follow & Unfollow Timeline")
-            .interactive()
-        )
-        st.altair_chart(chart, use_container_width=True)
-
-    # ---------- METRICS ----------
+    # ===============================
+    # SUMMARY METRICS
+    # ===============================
+    st.markdown("<div class='fade-in'>", unsafe_allow_html=True)
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("🚀 Following", len(following))
+    col2.metric("🎟️ Followers", len(followers))
     unfollowers = [u for u in following if u["username"] not in set_followers]
     unfollowing = [u for u in followers if u["username"] not in set_following]
     all_time_unfollowers = list(old_followers - set_followers)
+    col3.metric("😒 Not Following Back", len(unfollowers))
+    col4.metric("💔 You Don’t Follow Back", len(unfollowing))
+    col5.metric("🕓 All-time Unfollowers", len(all_time_unfollowers))
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.divider()
-    st.subheader("📆 Activity Timeline")
-
-    tab1, tab2 = st.tabs(["🟢 Recently Followed You", "🔴 Recently Unfollowed You"])
-    with tab1:
-        if recent_follows:
-            for item in recent_follows:
-                st.markdown(f"- [{item['username']}](https://letterboxd.com/{item['username']}/) followed you on **{item['follow_date']}** 🎉")
-        else:
-            st.success("No new followers recently.")
-
-    with tab2:
-        if recent_unfollows_list:
-            for item in recent_unfollows_list:
-                st.markdown(f"- [{item['username']}](https://letterboxd.com/{item['username']}/) unfollowed you on **{item['unfollow_date']}** 💔")
-        else:
-            st.info("No one unfollowed you recently.")
-
-    # ---------- VISUAL INSIGHTS ----------
+    # ===============================
+    # VISUAL INSIGHTS (PIE CHART)
+    # ===============================
     st.divider()
     st.subheader("📊 Visual Insights")
 
@@ -240,15 +179,13 @@ if check_btn and username:
             labels=list(stats.keys()),
             values=list(stats.values()),
             hole=0.55,
-            marker=dict(colors=["#4C9EFF", "#3DDC84", "#FF6B6B", "#F5A623"],
-                        line=dict(color="#0E1117", width=2)),
+            marker=dict(colors=["#4C9EFF","#3DDC84","#FF6B6B","#F5A623"], line=dict(color="#0E1117", width=2)),
             hoverinfo="label+percent",
             textinfo="value",
             textfont=dict(size=18, color="white")
         )]
     )
-
-    fig.update_traces(pull=[0.05, 0, 0.05, 0], rotation=45)
+    fig.update_traces(pull=[0.05, 0, 0.05, 0])
     fig.update_layout(
         showlegend=True,
         paper_bgcolor="#0E1117",
@@ -256,31 +193,40 @@ if check_btn and username:
         font=dict(color="white", size=16),
         annotations=[dict(text="Letterboxd Stats", x=0.5, y=0.5, font_size=20, showarrow=False)]
     )
-
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # ---------- SUMMARY METRICS ----------
-    st.markdown("<div class='fade-in'>", unsafe_allow_html=True)
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("🚀 Following", following_count)
-    col2.metric("🎟️ Followers", followers_count)
-    col3.metric("😒 Not Following Back", len(unfollowers))
-    col4.metric("💔 You Don’t Follow Back", len(unfollowing))
-    col5.metric("🕓 All-time Unfollowers", len(all_time_unfollowers))
-    st.markdown("</div>", unsafe_allow_html=True)
+    # ===============================
+    # ACTIVITY TIMELINE (10 Terbaru)
+    # ===============================
+    st.divider()
+    st.subheader("📆 Activity Timeline")
 
-    # ---------- GRAPH ----------
-    st.subheader("📊 Relationship Overview")
-    labels = ["Following", "Followers", "Unfollowers", "Unfollowing", "All-time Unfollowers"]
-    values = [following_count, followers_count, len(unfollowers), len(unfollowing), len(all_time_unfollowers)]
-    fig, ax = plt.subplots(facecolor="#141414")
-    ax.bar(labels, values, color="#1db954")
-    ax.set_title(f"@{username}'s Stats", color="#fff")
-    ax.set_ylabel("Count", color="#fff")
-    ax.tick_params(colors="#ccc")
-    st.pyplot(fig)
+    tab1, tab2 = st.tabs(["🟢 Recently Followed You", "🔴 Recently Unfollowed You"])
+    with tab1:
+        if recent_follows:
+            for item in recent_follows[:10]:
+                st.markdown(
+                    f"<div class='activity-box'>"
+                    f"<b><a href='https://letterboxd.com/{item['username']}/' target='_blank' style='color:#3DDC84;'>"
+                    f"{item['username']}</a></b> followed you on <b>{item['follow_date']}</b> 🎉"
+                    f"</div>", unsafe_allow_html=True)
+        else:
+            st.success("No new followers recently.")
 
-    # ---------- DISPLAY TABS ----------
+    with tab2:
+        if recent_unfollows_list:
+            for item in recent_unfollows_list[:10]:
+                st.markdown(
+                    f"<div class='activity-box'>"
+                    f"<b><a href='https://letterboxd.com/{item['username']}/' target='_blank' style='color:#FF6B6B;'>"
+                    f"{item['username']}</a></b> unfollowed you on <b>{item['unfollow_date']}</b> 💔"
+                    f"</div>", unsafe_allow_html=True)
+        else:
+            st.info("No one unfollowed you recently.")
+
+    # ===============================
+    # LIST TABS
+    # ===============================
     st.divider()
     tabs = st.tabs(["🚫 Not Following Back", "↩️ You Don’t Follow Back", "📉 All-time Unfollowers"])
 
@@ -315,6 +261,6 @@ if check_btn and username:
     st.divider()
     st.markdown(
         "<p style='text-align:center;opacity:0.8;'>🐞 Found a bug? Contact me - Built with ❤️ by "
-        "<a href='https://boxd.it/9BaD9' style='color:#1db954;'>rafilajhh</a></p>",
+        "<a href='https://boxd.it/9BaD9' style='color:#1db954;'>Bynguts</a></p>",
         unsafe_allow_html=True,
     )
