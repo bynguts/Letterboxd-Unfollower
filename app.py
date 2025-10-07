@@ -9,9 +9,6 @@ import os
 import json
 from datetime import datetime
 
-# --------------------------
-# Setup
-# --------------------------
 nest_asyncio.apply()
 semaphore = asyncio.Semaphore(5)
 DATA_FOLDER = "user_data"
@@ -64,6 +61,24 @@ async def get_user_list(username, tab, max_pages_followers, max_pages_following)
                     user_list.append(username_lb)
     return user_list
 
+async def get_favorite_films(username, max_pages=2):
+    urls = [f"https://letterboxd.com/{username}/films/favorites/page/{p}/" for p in range(1, max_pages+1)]
+    films = []
+    async with aiohttp.ClientSession() as session:
+        for url in urls:
+            html = await fetch_page(session, url)
+            if not html:
+                continue
+            soup = BeautifulSoup(html, "html.parser")
+            film_blocks = soup.select("li.film-detail")
+            for film in film_blocks:
+                title_tag = film.select_one("h3 a")
+                title = title_tag.text.strip() if title_tag else None
+                link = "https://letterboxd.com" + title_tag['href'] if title_tag and title_tag.has_attr('href') else None
+                if title:
+                    films.append({"title": title, "link": link})
+    return films
+
 @st.cache_data
 def fetch_data(username):
     loop = asyncio.new_event_loop()
@@ -111,21 +126,6 @@ def get_today_changes(username, followers, following):
     return unfollowed_today, new_followers
 
 # --------------------------
-# Recommended Movies
-# --------------------------
-def get_recommended_movies():
-    if 'recommended_movies' not in st.session_state:
-        # Dummy recommendations, bisa diganti API scrape Letterboxd/IMDb
-        st.session_state.recommended_movies = [
-            {"title": "Everything Everywhere All At Once", "year": 2022, "rating": 8.5},
-            {"title": "Top Gun: Maverick", "year": 2022, "rating": 8.4},
-            {"title": "The Batman", "year": 2022, "rating": 8.3},
-            {"title": "Avatar: The Way of Water", "year": 2022, "rating": 8.1},
-            {"title": "RRR", "year": 2022, "rating": 8.1},
-        ]
-    return st.session_state.recommended_movies
-
-# --------------------------
 # Streamlit UI
 # --------------------------
 st.set_page_config(page_title="Letterboxd Tracker", layout="wide")
@@ -136,12 +136,14 @@ if username:
     with st.spinner(f"Fetching data for {username}..."):
         followers, following = fetch_data(username)
         save_history(username, followers, following)
+        favorite_films = asyncio.run(get_favorite_films(username))
 
     set_followers = set(followers)
     set_following = set(following)
     unfollowers = [u for u in following if u not in set_followers]
     unfollowing = [u for u in followers if u not in set_following]
     mutuals = [u for u in followers if u in set_following]
+
     unfollowed_today, new_followers_today = get_today_changes(username, followers, following)
 
     # Stats Cards
@@ -153,8 +155,7 @@ if username:
     col5.metric("New Followers Today", len(new_followers_today))
 
     # Tabs
-    tabs = st.tabs(["Summary & Mutuals", "Doesn't Follow You Back", "You Don't Follow Back",
-                    "Statistics", "Trends", "Recommended Movies"])
+    tabs = st.tabs(["Summary & Mutuals", "Doesn't Follow You Back", "You Don't Follow Back", "Statistics", "Trends", "Recommended Films"])
 
     # ---- Summary & Mutuals ----
     with tabs[0]:
@@ -211,11 +212,11 @@ if username:
             ).properties(title="Followers Over Time", width=700, height=400)
             st.altair_chart(line_chart, use_container_width=True)
 
-    # ---- Recommended Movies ----
+    # ---- Recommended Films ----
     with tabs[5]:
-        st.subheader("🎬 Recommended Movies For You")
-        movies = get_recommended_movies()
-        for i, movie in enumerate(movies, start=1):
-            st.markdown(f"{i}. **{movie['title']}** ({movie['year']}) — ⭐ {movie['rating']}")
-
-    st.markdown("🐞 Found a bug? Contact me — Made by [YourUsername](https://letterboxd.com/YourUsername)")
+        st.subheader("🎬 Recommended Films")
+        if favorite_films:
+            for f in favorite_films[:20]:
+                st.markdown(f"- [{f['title']}]({f['link']})")
+        else:
+            st.info("No favorite films found for this user.")
