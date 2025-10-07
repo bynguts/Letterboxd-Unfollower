@@ -151,8 +151,8 @@ if check_btn and username:
     # ===============================
     st.markdown("<div class='fade-in'>", unsafe_allow_html=True)
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("🚀 Following", len(following))
-    col2.metric("🎟️ Followers", len(followers))
+    col1.metric("🚶‍♂️ Following", len(following))
+    col2.metric("👥 Followers", len(followers))
     unfollowers = [u for u in following if u["username"] not in set_followers]
     unfollowing = [u for u in followers if u["username"] not in set_following]
     all_time_unfollowers = list(old_followers - set_followers)
@@ -211,7 +211,7 @@ if check_btn and username:
                     f"{item['username']}</a></b> followed you on <b>{item['follow_date']}</b> 🎉"
                     f"</div>", unsafe_allow_html=True)
         else:
-            st.success("No new followers recently.")
+            st.success("No new followers recently. 🥹")
 
     with tab2:
         if recent_unfollows_list:
@@ -222,7 +222,7 @@ if check_btn and username:
                     f"{item['username']}</a></b> unfollowed you on <b>{item['unfollow_date']}</b> 💔"
                     f"</div>", unsafe_allow_html=True)
         else:
-            st.info("No one unfollowed you recently.")
+            st.info("No one unfollowed you recently. 😊")
 
     # ===============================
     # LIST TABS
@@ -260,7 +260,8 @@ if check_btn and username:
 
     st.divider()
     st.markdown(
-        "<p style='text-align:center;opacity:0.8;'>🐞 Found a bug? Contact me - Built with ❤️ by "
+        "<p style='text-align:center;opacity:0.8;'>Found a bug? Contact me (let's be moots 🥺) - Built with ❤️ by "
         "<a href='https://boxd.it/9BaD9' style='color:#1db954;'>Bynguts</a></p>",
         unsafe_allow_html=True,
     )
+
