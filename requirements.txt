@@ -1,0 +1,6 @@
+streamlit
+bs4
+aiohttp
+nest_asyncio
+pandas
+altair
