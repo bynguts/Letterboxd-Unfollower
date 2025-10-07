@@ -61,6 +61,36 @@ async def get_user_list(username, tab, max_pages_followers, max_pages_following)
                     user_list.append(username_lb)
     return user_list
 
+async def get_user_films(username):
+    """
+    Ambil daftar film yang ditonton / di-review user.
+    """
+    url = f"https://letterboxd.com/{username}/films/"
+    async with aiohttp.ClientSession() as session:
+        html = await fetch_page(session, url)
+    soup = BeautifulSoup(html, "html.parser")
+    films = []
+    for film_tag in soup.select("ul.poster-list li"):
+        title_tag = film_tag.select_one("img")
+        if title_tag:
+            films.append({
+                "title": title_tag["alt"],
+                "poster": title_tag["data-src"] if title_tag.has_attr("data-src") else None,
+                "url": film_tag.select_one("a")["href"] if film_tag.select_one("a") else None
+            })
+    return films
+
+def recommend_films(user_films, popular_films):
+    """
+    Simple recommendation: match titles already watched for demo.
+    """
+    watched_titles = set(f["title"] for f in user_films)
+    recommendations = [f for f in popular_films if f["title"] not in watched_titles]
+    return recommendations[:10]
+
+# --------------------------
+# Data Management
+# --------------------------
 @st.cache_data
 def fetch_data(username):
     loop = asyncio.new_event_loop()
@@ -70,9 +100,6 @@ def fetch_data(username):
     following = loop.run_until_complete(get_user_list(username, "following", max_pages_followers, max_pages_following))
     return followers, following
 
-# --------------------------
-# Daily Data Management
-# --------------------------
 def load_history(username):
     path = os.path.join(DATA_FOLDER, f"{username}.json")
     if os.path.exists(path):
@@ -108,16 +135,6 @@ def get_today_changes(username, followers, following):
     return unfollowed_today, new_followers
 
 # --------------------------
-# Dummy Film Recommendation Function
-# --------------------------
-def get_user_films(username):
-    # Placeholder: normally fetch from Letterboxd watched list
-    return []
-
-def recommend_films(user_films, popular_films):
-    return [film for film in popular_films if film["title"] not in user_films]
-
-# --------------------------
 # Streamlit UI
 # --------------------------
 st.set_page_config(page_title="Letterboxd Tracker", layout="wide")
@@ -139,11 +156,11 @@ if username:
 
     # Stats Cards
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("👤 Following", len(following))
-    col2.metric("⭐ Followers", len(followers))
-    col3.metric("🤝 Mutuals", len(mutuals))
-    col4.metric("📉 Unfollowers Today", len(unfollowed_today))
-    col5.metric("📈 New Followers Today", len(new_followers_today))
+    col1.metric("Following", len(following))
+    col2.metric("Followers", len(followers))
+    col3.metric("Mutuals", len(mutuals))
+    col4.metric("Unfollowers Today", len(unfollowed_today))
+    col5.metric("New Followers Today", len(new_followers_today))
 
     # Tabs
     tabs = st.tabs(["Summary & Mutuals", "Doesn't Follow You Back", "You Don't Follow Back", "Statistics", "Trends", "Recommended Films"])
@@ -205,25 +222,24 @@ if username:
 
     # ---- Recommended Films ----
     with tabs[5]:
-        st.subheader("🎥 Film Recommendations Based on Your Watched List")
-        user_films = get_user_films(username)
+        st.subheader("Film Recommendations Based on Your Watched List")
+        with st.spinner("Fetching your watched films..."):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            user_films = loop.run_until_complete(get_user_films(username))
+        # Example popular films (hardcoded demo)
         popular_films = [
-            {"title": "Everything Everywhere All At Once", "url": "/film/everything-everywhere-all-at-once/", "poster": "https://m.media-amazon.com/images/I/81E0q8Zj0JL._AC_SY679_.jpg"},
-            {"title": "Top Gun: Maverick", "url": "/film/top-gun-maverick/", "poster": "https://m.media-amazon.com/images/I/71wE8cwPQQL._AC_SY679_.jpg"},
-            {"title": "The Batman", "url": "/film/the-batman-2022/", "poster": "https://m.media-amazon.com/images/I/71p1w+ULkNL._AC_SY679_.jpg"},
-            {"title": "Avatar: The Way of Water", "url": "/film/avatar-the-way-of-water/", "poster": "https://m.media-amazon.com/images/I/81b+J2V0uSL._AC_SY679_.jpg"},
-            {"title": "Puss in Boots: The Last Wish", "url": "/film/puss-in-boots-the-last-wish/", "poster": "https://m.media-amazon.com/images/I/71LEuVbVbGL._AC_SY679_.jpg"},
+            {"title": "Everything Everywhere All At Once", "url": "/film/everything-everywhere-all-at-once/", "poster": None},
+            {"title": "Top Gun: Maverick", "url": "/film/top-gun-maverick/", "poster": None},
+            {"title": "The Batman", "url": "/film/the-batman-2022/", "poster": None},
+            {"title": "Avatar: The Way of Water", "url": "/film/avatar-the-way-of-water/", "poster": None},
+            {"title": "Puss in Boots: The Last Wish", "url": "/film/puss-in-boots-the-last-wish/", "poster": None},
         ]
         recommendations = recommend_films(user_films, popular_films)
-        if recommendations:
-            for film in recommendations:
-                cols = st.columns([1,4])
-                with cols[0]:
-                    if film.get("poster"):
-                        st.image(film["poster"], width=60)
-                with cols[1]:
-                    st.markdown(f"[**{film['title']}**](https://letterboxd.com{film['url']})", unsafe_allow_html=True)
-        else:
-            st.success("No recommendations available. You’ve watched all popular films listed!")
-
-st.markdown("🐞 Found a bug? Contact me — Made by [byngts](https://boxd.it/9BaD9)")
+        for film in recommendations:
+            cols = st.columns([1,4])
+            with cols[0]:
+                if film.get("poster"):
+                    st.image(film["poster"], width=50)
+            with cols[1]:
+                st.markdown(f"[{film['title']}](https://letterboxd.com{film['url']})")
