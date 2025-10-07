@@ -133,6 +133,8 @@ username = st.text_input("👤 Enter your Letterboxd username:", placeholder="e.
 center_btn = st.columns(3)[1]
 go = center_btn.button("✨ Check Now!", use_container_width=True)
 
+import datetime
+
 if go and username:
     with st.status(f"Fetching data for @{username}...", expanded=True) as status:
         with st.spinner("Loading profile..."):
@@ -140,6 +142,63 @@ if go and username:
             asyncio.set_event_loop(loop)
             followers_count, following_count, followers, following = loop.run_until_complete(main_async(username))
         status.update(label="✅ Data fetched successfully!", state="complete")
+
+    current_date = datetime.date.today().isoformat()
+    set_followers = {u["username"] for u in followers}
+    set_following = {u["username"] for u in following}
+
+    os.makedirs("data", exist_ok=True)
+    follower_file = f"data/{username}_followers.csv"
+    unfollow_log = f"data/{username}_unfollow_history.csv"
+
+    old_data = pd.read_csv(follower_file) if os.path.exists(follower_file) else pd.DataFrame(columns=["username", "last_seen_date"])
+    old_followers = set(old_data["username"].tolist())
+
+    # --- Recent Follows ---
+    new_followers = set_followers - old_followers
+    recent_follows = [{"username": u, "follow_date": current_date} for u in new_followers]
+
+    # --- Recent Unfollows ---
+    recent_unfollows = old_followers - set_followers
+    recent_unfollows_list = [{"username": u, "unfollow_date": current_date} for u in recent_unfollows]
+
+    # --- Update Data File ---
+    new_df = pd.DataFrame(
+        [{"username": u, "last_seen_date": current_date} for u in set_followers]
+    )
+    new_df.to_csv(follower_file, index=False)
+
+    if recent_unfollows:
+        if os.path.exists(unfollow_log):
+            old_unf = pd.read_csv(unfollow_log)
+            new_unf = pd.DataFrame(recent_unfollows_list)
+            pd.concat([old_unf, new_unf], ignore_index=True).to_csv(unfollow_log, index=False)
+        else:
+            pd.DataFrame(recent_unfollows_list).to_csv(unfollow_log, index=False)
+
+    # --- Metrics ---
+    unfollowers = [u for u in following if u["username"] not in set_followers]
+    unfollowing = [u for u in followers if u["username"] not in set_following]
+    all_time_unfollowers = list(old_followers - set_followers)
+
+    st.divider()
+    st.subheader("📆 Activity Timeline")
+
+    tab1, tab2 = st.tabs(["🟢 Recently Followed You", "🔴 Recently Unfollowed You"])
+    with tab1:
+        if recent_follows:
+            for item in recent_follows:
+                st.markdown(f"- [{item['username']}](https://letterboxd.com/{item['username']}/) followed you on **{item['follow_date']}** 🎉")
+        else:
+            st.success("No new followers recently.")
+
+    with tab2:
+        if recent_unfollows_list:
+            for item in recent_unfollows_list:
+                st.markdown(f"- [{item['username']}](https://letterboxd.com/{item['username']}/) unfollowed you on **{item['unfollow_date']}** 💔")
+        else:
+            st.info("No one unfollowed you recently.")
+
 
     # ---------- DATA ----------
     set_followers = {u["username"] for u in followers}
@@ -214,3 +273,4 @@ if go and username:
         "<a href='https://letterboxd.com/rafilajhh/' style='color:#1db954;'>rafilajhh</a></p>",
         unsafe_allow_html=True,
     )
+
