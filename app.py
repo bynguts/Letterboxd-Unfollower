@@ -4,38 +4,36 @@ import aiohttp
 import asyncio
 import nest_asyncio
 import pandas as pd
-import altair as alt
-import os
-import json
-from datetime import datetime
-import requests
 
-# --------------------------
-# Settings
-# --------------------------
 nest_asyncio.apply()
 semaphore = asyncio.Semaphore(5)
-DATA_FOLDER = "user_data"
-os.makedirs(DATA_FOLDER, exist_ok=True)
-
-TMDB_API_KEY = "9ccb7f50fc9ac3bb4fd05b18333aa100"  # Masukkan API key TMDb mu
 
 # --------------------------
-# Async Helpers
+# Helper functions
 # --------------------------
 async def fetch_page(session, url):
     headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "*/*"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Referer": "https://letterboxd.com/",
+        "Connection": "keep-alive"
     }
     timeout = aiohttp.ClientTimeout(total=60)
     async with semaphore:
         try:
             async with session.get(url, headers=headers, timeout=timeout) as response:
                 if response.status != 200:
+                    print(f"Gagal fetch {url}, status: {response.status}")
                     return ""
+                print(f"✅ Fetched: {url}")
                 return await response.text()
-        except:
+        except asyncio.TimeoutError:
+            print(f"Timeout saat fetch: {url}")
+            return ""
+        except Exception as e:
+            print(f"Error saat fetch {url}: {e}")
             return ""
 
 async def get_profile_data(username):
@@ -44,179 +42,106 @@ async def get_profile_data(username):
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url) as response:
             html = await response.text()
+
     soup = BeautifulSoup(html, "html.parser")
     def get_count(tab):
-        tag = soup.select_one(f'a[href="/{username.lower()}/{tab}/"] > span.value')
+        selector = f'a[href="/{username.lower()}/{tab}/"] > span.value'
+        tag = soup.select_one(selector)
         return int(tag.text.replace(',', '')) if tag else 0
+
     max_pages_followers = int(get_count("followers") / 25) + 1
     max_pages_following = int(get_count("following") / 25) + 1
     return max_pages_followers, max_pages_following
 
 async def get_user_list(username, tab, max_pages_followers, max_pages_following):
-    urls = [
-        f"https://letterboxd.com/{username}/{tab}/page/{page}/"
-        for page in range(1, (max_pages_followers if tab=="followers" else max_pages_following)+1)
-    ]
+    urls = [f"https://letterboxd.com/{username}/{tab}/page/{page}/"
+            for page in range(1, (max_pages_followers if tab=="followers" else max_pages_following)+1)]
     user_list = []
     async with aiohttp.ClientSession() as session:
-        htmls = await asyncio.gather(*[fetch_page(session, url) for url in urls])
-        for html in htmls:
+        for i, url in enumerate(urls, start=1):
+            html = await fetch_page(session, url)
             if not html:
                 continue
             soup = BeautifulSoup(html, "html.parser")
             user_blocks = soup.select("div.person-summary")
             for user in user_blocks:
-                avatar_tag = user.select_one("a.avatar")
-                if avatar_tag and avatar_tag.has_attr("href"):
-                    user_list.append(avatar_tag["href"].strip("/"))
+                avatar_tag = user.select_one("a.avatar img")
+                username_lb = user.select_one("a.avatar")["href"].strip("/") if user.select_one("a.avatar") else None
+                avatar_url = avatar_tag["data-src"] if avatar_tag and avatar_tag.has_attr("data-src") else None
+                if username_lb:
+                    user_list.append({"username": username_lb, "avatar": avatar_url})
+            st.progress(i / len(urls))  # Update progress bar
     return user_list
 
-async def get_user_films(username):
-    url = f"https://letterboxd.com/{username}/films/"
-    async with aiohttp.ClientSession() as session:
-        html = await fetch_page(session, url)
-    soup = BeautifulSoup(html, "html.parser")
-    films = []
-    for film_tag in soup.select("ul.poster-list li"):
-        title_tag = film_tag.select_one("img")
-        if title_tag:
-            films.append({
-                "title": title_tag["alt"],
-                "poster": title_tag.get("data-src"),
-                "url": film_tag.select_one("a")["href"] if film_tag.select_one("a") else None
-            })
-    return films
-
-# --------------------------
-# TMDb Recommendations
-# --------------------------
-def get_recommendations_tmdb(user_films, max_recommendations=10):
-    recommended = []
-    seen_titles = set(f["title"].lower() for f in user_films)
-    
-    for film in user_films[:20]:  # ambil 20 film terbaru saja
-        query = film["title"]
-        try:
-            # Search film untuk dapat ID
-            search_url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}"
-            search_res = requests.get(search_url).json()
-            if not search_res.get("results"):
-                continue
-            movie_id = search_res["results"][0]["id"]
-
-            # Ambil rekomendasi TMDb
-            rec_url = f"https://api.themoviedb.org/3/movie/{movie_id}/recommendations?api_key={TMDB_API_KEY}"
-            rec_res = requests.get(rec_url).json()
-            for r in rec_res.get("results", []):
-                title = r["title"]
-                if title.lower() in seen_titles:
-                    continue
-                recommended.append({
-                    "title": title,
-                    "poster": f"https://image.tmdb.org/t/p/w200{r['poster_path']}" if r.get("poster_path") else None,
-                    "url": f"https://www.themoviedb.org/movie/{r['id']}"
-                })
-                seen_titles.add(title.lower())
-                if len(recommended) >= max_recommendations:
-                    return recommended
-        except:
-            continue
-    return recommended
-
-# --------------------------
-# Data Management
-# --------------------------
-@st.cache_data
-def fetch_data(username):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    max_pages_followers, max_pages_following = loop.run_until_complete(get_profile_data(username))
-    followers = loop.run_until_complete(get_user_list(username, "followers", max_pages_followers, max_pages_following))
-    following = loop.run_until_complete(get_user_list(username, "following", max_pages_followers, max_pages_following))
+async def main_async(username):
+    max_pages_followers, max_pages_following = await get_profile_data(username)
+    followers = await get_user_list(username, "followers", max_pages_followers, max_pages_following)
+    following = await get_user_list(username, "following", max_pages_followers, max_pages_following)
     return followers, following
-
-def load_history(username):
-    path = os.path.join(DATA_FOLDER, f"{username}.json")
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_history(username, followers, following):
-    path = os.path.join(DATA_FOLDER, f"{username}.json")
-    today = datetime.today().strftime("%Y-%m-%d")
-    data = load_history(username)
-    data[today] = {"followers": followers, "following": following}
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-
-def get_trends(username):
-    data = load_history(username)
-    df = pd.DataFrame([
-        {"date": d, "followers": len(v["followers"]), "following": len(v["following"])}
-        for d, v in sorted(data.items())
-    ])
-    return df
-
-def get_today_changes(username, followers, following):
-    data = load_history(username)
-    if not data:
-        return [], []
-    last_date = sorted(data.keys())[-1]
-    last_followers = set(data[last_date]["followers"])
-    last_following = set(data[last_date]["following"])
-    unfollowed_today = [u for u in last_following if u not in following]
-    new_followers = [u for u in followers if u not in last_followers]
-    return unfollowed_today, new_followers
 
 # --------------------------
 # Streamlit UI
 # --------------------------
-st.set_page_config(page_title="Letterboxd Tracker", layout="wide")
-st.title("🎬 Letterboxd Tracker & TMDb Recommendations")
+st.set_page_config(page_title="Letterboxd Unfollower Checker", layout="wide")
+st.title("🎬 Letterboxd Unfollower Checker")
+st.write("Compare your following & followers and see who doesn't follow you back!")
 
 username = st.text_input("Letterboxd username:").strip()
-if username:
+_, middle, _ = st.columns(3)
+check_button = middle.button("Check now!", use_container_width=True)
+
+if check_button and username:
+    st.session_state.progress = st.progress(0)
     with st.spinner(f"Fetching data for {username}..."):
-        followers, following = fetch_data(username)
-        save_history(username, followers, following)
-
-    set_followers = set(followers)
-    set_following = set(following)
-    unfollowers = [u for u in following if u not in set_followers]
-    unfollowing = [u for u in followers if u not in set_following]
-    mutuals = [u for u in followers if u in set_following]
-
-    unfollowed_today, new_followers_today = get_today_changes(username, followers, following)
-
-    # Stats Cards
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Following", len(following))
-    col2.metric("Followers", len(followers))
-    col3.metric("Mutuals", len(mutuals))
-    col4.metric("Unfollowers Today", len(unfollowed_today))
-    col5.metric("New Followers Today", len(new_followers_today))
-
-    # Tabs
-    tabs = st.tabs(["Summary & Mutuals", "Doesn't Follow You Back", "You Don't Follow Back", "Statistics", "Trends", "Recommended Films"])
-
-    # ---- Recommended Films ----
-    with tabs[5]:
-        st.subheader("Film Recommendations Based on Your Watched List")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        user_films = loop.run_until_complete(get_user_films(username))
-        
-        with st.spinner("Fetching recommendations from TMDb..."):
-            recommendations = get_recommendations_tmdb(user_films)
+        followers, following = loop.run_until_complete(main_async(username))
 
-        if recommendations:
-            for film in recommendations:
-                cols = st.columns([1,4])
-                with cols[0]:
-                    if film.get("poster"):
-                        st.image(film["poster"], width=50)
-                with cols[1]:
-                    st.markdown(f"[{film['title']}]({film['url']})")
+    set_followers = {u["username"] for u in followers}
+    set_following = {u["username"] for u in following}
+
+    unfollowers = [u for u in following if u["username"] not in set_followers]
+    unfollowing = [u for u in followers if u["username"] not in set_following]
+
+    # Stats
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("🚀 Following", len(following))
+    col2.metric("🎟️ Followers", len(followers))
+    col3.metric("😒 Doesn't Follow Back", len(unfollowers))
+    col4.metric("💔 You Don't Follow Back", len(unfollowing))
+
+    st.divider()
+    tabs = st.tabs(["Doesn't Follow You Back", "You Don't Follow Back"])
+
+    def display_user_list(user_list, highlight_color="#FF6B6B"):
+        for u in user_list:
+            cols = st.columns([1, 4])
+            with cols[0]:
+                if u.get("avatar"):
+                    st.image(u["avatar"], width=40)
+            with cols[1]:
+                st.markdown(f"<span style='color:{highlight_color};font-weight:bold;'>"
+                            f"[{u['username']}](https://letterboxd.com/{u['username']}/)</span>", unsafe_allow_html=True)
+
+    # Tab 1: Doesn't Follow Back (red)
+    with tabs[0]:
+        if unfollowers:
+            st.caption("People you follow but they don’t follow you")
+            display_user_list(unfollowers, highlight_color="#FF4C4C")
+            df_unfollowers = pd.DataFrame([u["username"] for u in unfollowers], columns=["username"])
+            st.download_button("Download CSV", df_unfollowers.to_csv(index=False), "unfollowers.csv")
         else:
-            st.info("No recommendations found. Try adding more films to your Letterboxd profile.")
+            st.success("Everyone you follow also follows you back! 🎉")
+
+    # Tab 2: You Don't Follow Back (blue)
+    with tabs[1]:
+        if unfollowing:
+            st.caption("People who follow you but you don’t follow them")
+            display_user_list(unfollowing, highlight_color="#4C9EFF")
+            df_unfollowing = pd.DataFrame([u["username"] for u in unfollowing], columns=["username"])
+            st.download_button("Download CSV", df_unfollowing.to_csv(index=False), "unfollowing.csv")
+        else:
+            st.success("You follow back everyone who follows you! 👍")
+
+    st.divider()
+    st.markdown("🐞 Found a bug? Contact me — Made by [rafilajhh](https://letterboxd.com/rafilajhh/)")
