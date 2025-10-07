@@ -108,37 +108,20 @@ def get_today_changes(username, followers, following):
     return unfollowed_today, new_followers
 
 # --------------------------
-# Recommended Films
+# Dummy Film Recommendation Function
 # --------------------------
-async def get_user_films(username, max_pages=5):
-    films = []
-    urls = [f"https://letterboxd.com/{username}/films/page/{page}/" for page in range(1, max_pages+1)]
-    async with aiohttp.ClientSession() as session:
-        for url in urls:
-            html = await fetch_page(session, url)
-            if not html:
-                continue
-            soup = BeautifulSoup(html, "html.parser")
-            film_blocks = soup.select("li.poster-container")
-            for film in film_blocks:
-                a_tag = film.select_one("div.poster > a")
-                if a_tag:
-                    title = a_tag["title"]
-                    link = a_tag["href"]
-                    img_tag = film.select_one("img")
-                    poster = img_tag["data-src"] if img_tag and img_tag.has_attr("data-src") else None
-                    films.append({"title": title, "url": link, "poster": poster})
-    return films
+def get_user_films(username):
+    # Placeholder: normally fetch from Letterboxd watched list
+    return []
 
-def recommend_films_auto(user_films, popular_films):
-    watched_titles = {film["title"] for film in user_films}
-    return [film for film in popular_films if film["title"] not in watched_titles]
+def recommend_films(user_films, popular_films):
+    return [film for film in popular_films if film["title"] not in user_films]
 
 # --------------------------
 # Streamlit UI
 # --------------------------
-st.set_page_config(page_title="Letterboxd Tracker & Recommendations", layout="wide")
-st.title("🎬 Letterboxd Tracker & Recommendations")
+st.set_page_config(page_title="Letterboxd Tracker", layout="wide")
+st.title("🎬 Letterboxd Daily Tracker & Dashboard")
 
 username = st.text_input("Letterboxd username:").strip()
 if username:
@@ -151,18 +134,19 @@ if username:
     unfollowers = [u for u in following if u not in set_followers]
     unfollowing = [u for u in followers if u not in set_following]
     mutuals = [u for u in followers if u in set_following]
+
     unfollowed_today, new_followers_today = get_today_changes(username, followers, following)
 
     # Stats Cards
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Following", len(following))
-    col2.metric("Followers", len(followers))
-    col3.metric("Mutuals", len(mutuals))
-    col4.metric("Unfollowers Today", len(unfollowed_today))
-    col5.metric("New Followers Today", len(new_followers_today))
+    col1.metric("👤 Following", len(following))
+    col2.metric("⭐ Followers", len(followers))
+    col3.metric("🤝 Mutuals", len(mutuals))
+    col4.metric("📉 Unfollowers Today", len(unfollowed_today))
+    col5.metric("📈 New Followers Today", len(new_followers_today))
 
     # Tabs
-    tabs = st.tabs(["Summary & Mutuals", "Doesn't Follow You Back", "You Don't Follow Back", "Statistics", "Trends", "Recommendations"])
+    tabs = st.tabs(["Summary & Mutuals", "Doesn't Follow You Back", "You Don't Follow Back", "Statistics", "Trends", "Recommended Films"])
 
     # ---- Summary & Mutuals ----
     with tabs[0]:
@@ -219,21 +203,18 @@ if username:
             ).properties(title="Followers Over Time", width=700, height=400)
             st.altair_chart(line_chart, use_container_width=True)
 
-    # ---- Recommendations ----
+    # ---- Recommended Films ----
     with tabs[5]:
         st.subheader("🎥 Film Recommendations Based on Your Watched List")
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        user_films = loop.run_until_complete(get_user_films(username, max_pages=5))
-
-        # Popular films (contoh)
+        user_films = get_user_films(username)
         popular_films = [
-            {"title": "Everything Everywhere All At Once", "url": "/film/everything-everywhere-all-at-once/","poster":"https://m.media-amazon.com/images/I/81E0q8Zj0JL._AC_SY679_.jpg"},
-            {"title": "Top Gun: Maverick", "url": "/film/top-gun-maverick/","poster":"https://m.media-amazon.com/images/I/71wE8cwPQQL._AC_SY679_.jpg"},
-            {"title": "The Batman", "url": "/film/the-batman-2022/","poster":"https://m.media-amazon.com/images/I/71p1w+ULkNL._AC_SY679_.jpg"},
+            {"title": "Everything Everywhere All At Once", "url": "/film/everything-everywhere-all-at-once/", "poster": "https://m.media-amazon.com/images/I/81E0q8Zj0JL._AC_SY679_.jpg"},
+            {"title": "Top Gun: Maverick", "url": "/film/top-gun-maverick/", "poster": "https://m.media-amazon.com/images/I/71wE8cwPQQL._AC_SY679_.jpg"},
+            {"title": "The Batman", "url": "/film/the-batman-2022/", "poster": "https://m.media-amazon.com/images/I/71p1w+ULkNL._AC_SY679_.jpg"},
+            {"title": "Avatar: The Way of Water", "url": "/film/avatar-the-way-of-water/", "poster": "https://m.media-amazon.com/images/I/81b+J2V0uSL._AC_SY679_.jpg"},
+            {"title": "Puss in Boots: The Last Wish", "url": "/film/puss-in-boots-the-last-wish/", "poster": "https://m.media-amazon.com/images/I/71LEuVbVbGL._AC_SY679_.jpg"},
         ]
-        recommendations = recommend_films_auto(user_films, popular_films)
-
+        recommendations = recommend_films(user_films, popular_films)
         if recommendations:
             for film in recommendations:
                 cols = st.columns([1,4])
@@ -245,4 +226,4 @@ if username:
         else:
             st.success("No recommendations available. You’ve watched all popular films listed!")
 
-st.markdown("🐞 Found a bug? Contact me — Made by [Bynguts](https://boxd.it/9BaD9)")
+st.markdown("🐞 Found a bug? Contact me — Made by [byngts](https://boxd.it/9BaD9)")
