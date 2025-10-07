@@ -6,6 +6,9 @@ import nest_asyncio
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
+
 
 nest_asyncio.apply()
 semaphore = asyncio.Semaphore(5)
@@ -176,6 +179,31 @@ if go and username:
         else:
             pd.DataFrame(recent_unfollows_list).to_csv(unfollow_log, index=False)
 
+    import altair as alt
+
+timeline_data = []
+for item in recent_follows:
+    timeline_data.append({"username": item["username"], "date": item["follow_date"], "action": "Followed"})
+for item in recent_unfollows_list:
+    timeline_data.append({"username": item["username"], "date": item["unfollow_date"], "action": "Unfollowed"})
+
+if timeline_data:
+    df_timeline = pd.DataFrame(timeline_data)
+    chart = (
+        alt.Chart(df_timeline)
+        .mark_circle(size=150)
+        .encode(
+            x="date:T",
+            y=alt.Y("action:N", title=None),
+            color=alt.Color("action", scale=alt.Scale(range=["#3DDC84", "#FF6B6B"])),
+            tooltip=["username", "action", "date"]
+        )
+        .properties(height=300, title="🕓 Recent Follow & Unfollow Timeline")
+        .interactive()
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+
     # --- Metrics ---
     unfollowers = [u for u in following if u["username"] not in set_followers]
     unfollowing = [u for u in followers if u["username"] not in set_following]
@@ -198,6 +226,43 @@ if go and username:
                 st.markdown(f"- [{item['username']}](https://letterboxd.com/{item['username']}/) unfollowed you on **{item['unfollow_date']}** 💔")
         else:
             st.info("No one unfollowed you recently.")
+
+    st.divider()
+st.subheader("📊 Visual Insights")
+
+# Data untuk grafik
+stats = {
+    "Following": len(following),
+    "Followers": len(followers),
+    "Doesn't Follow Back": len(unfollowers),
+    "You Don't Follow Back": len(unfollowing)
+}
+
+# --- Animated Ring Chart (Plotly Doughnut) ---
+fig = go.Figure(
+    data=[go.Pie(
+        labels=list(stats.keys()),
+        values=list(stats.values()),
+        hole=0.55,
+        marker=dict(colors=["#4C9EFF", "#3DDC84", "#FF6B6B", "#F5A623"],
+                    line=dict(color="#0E1117", width=2)),
+        hoverinfo="label+percent",
+        textinfo="value",
+        textfont=dict(size=18, color="white")
+    )]
+)
+
+fig.update_traces(pull=[0.05, 0, 0.05, 0], rotation=45)
+fig.update_layout(
+    showlegend=True,
+    paper_bgcolor="#0E1117",
+    plot_bgcolor="#0E1117",
+    font=dict(color="white", size=16),
+    annotations=[dict(text="Letterboxd Stats", x=0.5, y=0.5, font_size=20, showarrow=False)]
+)
+
+st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
 
 
     # ---------- DATA ----------
@@ -273,4 +338,5 @@ if go and username:
         "<a href='https://letterboxd.com/rafilajhh/' style='color:#1db954;'>rafilajhh</a></p>",
         unsafe_allow_html=True,
     )
+
 
