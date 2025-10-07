@@ -10,15 +10,19 @@ import json
 from datetime import datetime
 import requests
 
-# -------------------------- Settings --------------------------
+# --------------------------
+# Settings
+# --------------------------
 nest_asyncio.apply()
 semaphore = asyncio.Semaphore(5)
 DATA_FOLDER = "user_data"
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
-TMDB_API_KEY = "9ccb7f50fc9ac3bb4fd05b18333aa100"
+TMDB_API_KEY = "9ccb7f50fc9ac3bb4fd05b18333aa100"  # Masukkan API key TMDb mu
 
-# -------------------------- Async Helpers --------------------------
+# --------------------------
+# Async Helpers
+# --------------------------
 async def fetch_page(session, url):
     headers = {
         "User-Agent": "Mozilla/5.0",
@@ -75,33 +79,35 @@ async def get_user_films(username):
     films = []
     for film_tag in soup.select("ul.poster-list li"):
         title_tag = film_tag.select_one("img")
-        link_tag = film_tag.select_one("a")
-        if title_tag or link_tag:
-            title = title_tag["alt"] if title_tag and title_tag.has_attr("alt") else None
-            if not title and link_tag and link_tag.has_attr("title"):
-                title = link_tag["title"]
-            if title:
-                films.append({
-                    "title": title,
-                    "poster": title_tag.get("data-src") if title_tag else None,
-                    "url": link_tag["href"] if link_tag and link_tag.has_attr("href") else None
-                })
-    if not films:
-        films = [{"title": "Everything Everywhere All At Once", "poster": None, "url": "/film/everything-everywhere-all-at-once/"}]
-    st.write(f"[DEBUG] {username} films scraped: {len(films)}")
+        if title_tag:
+            films.append({
+                "title": title_tag["alt"],
+                "poster": title_tag.get("data-src"),
+                "url": film_tag.select_one("a")["href"] if film_tag.select_one("a") else None
+            })
     return films
 
-# -------------------------- TMDb Recommendations --------------------------
+# --------------------------
+# TMDb Recommendations
+# --------------------------
 def get_recommendations_tmdb(user_films, max_recommendations=10):
     recommended = []
     seen_titles = set(f["title"].lower() for f in user_films)
-    for film in user_films:
+    
+    for film in user_films[:20]:  # ambil 20 film terbaru saja
         query = film["title"]
-        url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}"
         try:
-            res = requests.get(url).json()
-            results = res.get("results", [])
-            for r in results[:3]:
+            # Search film untuk dapat ID
+            search_url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}"
+            search_res = requests.get(search_url).json()
+            if not search_res.get("results"):
+                continue
+            movie_id = search_res["results"][0]["id"]
+
+            # Ambil rekomendasi TMDb
+            rec_url = f"https://api.themoviedb.org/3/movie/{movie_id}/recommendations?api_key={TMDB_API_KEY}"
+            rec_res = requests.get(rec_url).json()
+            for r in rec_res.get("results", []):
                 title = r["title"]
                 if title.lower() in seen_titles:
                     continue
@@ -117,7 +123,9 @@ def get_recommendations_tmdb(user_films, max_recommendations=10):
             continue
     return recommended
 
-# -------------------------- Data Management --------------------------
+# --------------------------
+# Data Management
+# --------------------------
 @st.cache_data
 def fetch_data(username):
     loop = asyncio.new_event_loop()
@@ -161,9 +169,11 @@ def get_today_changes(username, followers, following):
     new_followers = [u for u in followers if u not in last_followers]
     return unfollowed_today, new_followers
 
-# -------------------------- Streamlit UI --------------------------
+# --------------------------
+# Streamlit UI
+# --------------------------
 st.set_page_config(page_title="Letterboxd Tracker", layout="wide")
-st.title("🎬 Letterboxd Daily Tracker & Dashboard")
+st.title("🎬 Letterboxd Tracker & TMDb Recommendations")
 
 username = st.text_input("Letterboxd username:").strip()
 if username:
@@ -200,12 +210,13 @@ if username:
         with st.spinner("Fetching recommendations from TMDb..."):
             recommendations = get_recommendations_tmdb(user_films)
 
-        if not recommendations:
-            st.info("No recommendations found yet. Try again later!")
-        for film in recommendations:
-            cols = st.columns([1,4])
-            with cols[0]:
-                if film.get("poster"):
-                    st.image(film["poster"], width=50)
-            with cols[1]:
-                st.markdown(f"[{film['title']}]({film['url']})")
+        if recommendations:
+            for film in recommendations:
+                cols = st.columns([1,4])
+                with cols[0]:
+                    if film.get("poster"):
+                        st.image(film["poster"], width=50)
+                with cols[1]:
+                    st.markdown(f"[{film['title']}]({film['url']})")
+        else:
+            st.info("No recommendations found. Try adding more films to your Letterboxd profile.")
