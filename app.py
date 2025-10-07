@@ -4,19 +4,20 @@ import aiohttp
 import asyncio
 import nest_asyncio
 import pandas as pd
+import os
+import matplotlib.pyplot as plt
 
 nest_asyncio.apply()
 semaphore = asyncio.Semaphore(5)
 
 # -------------------------------
-# FETCH PAGE HELPER
+# FETCH PAGE
 # -------------------------------
 async def fetch_page(session, url):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Referer": "https://letterboxd.com/",
         "Connection": "keep-alive"
     }
@@ -26,24 +27,19 @@ async def fetch_page(session, url):
         try:
             async with session.get(url, headers=headers, timeout=timeout) as response:
                 if response.status != 200:
-                    print(f"❌ Gagal fetch {url} (status {response.status})")
+                    print(f"❌ Gagal fetch {url} ({response.status})")
                     return ""
-                print(f"✅ Fetched: {url}")
                 return await response.text()
         except Exception as e:
-            print(f"Error saat fetch {url}: {e}")
+            print(f"Error fetch {url}: {e}")
             return ""
 
 # -------------------------------
-# PROFILE DATA (UNTUK PAGE COUNT)
+# PROFILE DATA
 # -------------------------------
 async def get_profile_data(username):
     url = f"https://letterboxd.com/{username}/"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-    }
-
+    headers = {"User-Agent": "Mozilla/5.0"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as response:
             html = await response.text()
@@ -55,12 +51,15 @@ async def get_profile_data(username):
         tag = soup.select_one(selector)
         return int(tag.text.replace(',', '')) if tag else 0
 
-    max_pages_followers = int(get_count("followers") / 25) + 1
-    max_pages_following = int(get_count("following") / 25) + 1
-    return max_pages_followers, max_pages_following
+    followers_count = get_count("followers")
+    following_count = get_count("following")
+
+    max_pages_followers = int(followers_count / 25) + 1
+    max_pages_following = int(following_count / 25) + 1
+    return followers_count, following_count, max_pages_followers, max_pages_following
 
 # -------------------------------
-# SCRAPE FOLLOWERS / FOLLOWING
+# USER LIST
 # -------------------------------
 async def get_user_list(username, tab, max_pages_followers, max_pages_following):
     max_pages = max_pages_followers if tab == "followers" else max_pages_following
@@ -86,31 +85,28 @@ async def get_user_list(username, tab, max_pages_followers, max_pages_following)
 # MAIN ASYNC
 # -------------------------------
 async def main_async(username):
-    max_pages_followers, max_pages_following = await get_profile_data(username)
+    followers_count, following_count, max_pages_followers, max_pages_following = await get_profile_data(username)
     followers = await get_user_list(username, "followers", max_pages_followers, max_pages_following)
     following = await get_user_list(username, "following", max_pages_followers, max_pages_following)
-    return followers, following
+    return followers_count, following_count, followers, following
 
 # -------------------------------
 # STREAMLIT UI
 # -------------------------------
 st.set_page_config(page_title="Letterboxd Unfollower Checker", layout="wide")
-st.title("🎬 Letterboxd Unfollower Checker")
-st.write("**Automatically compare your followers and following on Letterboxd.**")
+st.title("🎬 Letterboxd Unfollower Checker & Tracker")
+st.write("Compare your following vs followers, view stats, and track **all-time unfollowers**.")
 
 username = st.text_input("Letterboxd username: ").strip()
 _, mid, _ = st.columns(3)
 if mid.button("Check now!", use_container_width=True) and username:
     with st.status(f"Fetching data for '{username}'...", expanded=True) as status:
-        with st.spinner("Retrieving followers and following lists..."):
+        with st.spinner("Retrieving data..."):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            followers, following = loop.run_until_complete(main_async(username))
+            followers_count, following_count, followers, following = loop.run_until_complete(main_async(username))
         status.update(label="✅ Data loaded successfully!", state="complete", expanded=False)
 
-    # -------------------------------
-    # COMPARISON
-    # -------------------------------
     set_followers = {u["username"] for u in followers}
     set_following = {u["username"] for u in following}
 
@@ -118,51 +114,89 @@ if mid.button("Check now!", use_container_width=True) and username:
     unfollowing = [u for u in followers if u["username"] not in set_following]
 
     # -------------------------------
-    # STATS
+    # All-time unfollower tracker
     # -------------------------------
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("🚀 Following", len(following))
-    col2.metric("🎟️ Followers", len(followers))
-    col3.metric("😒 Doesn't Follow You Back", len(unfollowers))
-    col4.metric("💔 You Don't Follow Back", len(unfollowing))
+    os.makedirs("data", exist_ok=True)
+    file_path = f"data/{username}_followers.csv"
 
+    previous_followers = set()
+    if os.path.exists(file_path):
+        old_df = pd.read_csv(file_path)
+        previous_followers = set(old_df["username"].tolist())
+
+    # simpan followers terbaru
+    pd.DataFrame(list(set_followers), columns=["username"]).to_csv(file_path, index=False)
+
+    all_time_unfollowers = list(previous_followers - set_followers)
+
+    # -------------------------------
+    # Stats
+    # -------------------------------
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("🚀 Following", following_count)
+    col2.metric("🎟️ Followers", followers_count)
+    col3.metric("😒 Doesn't Follow Back", len(unfollowers))
+    col4.metric("💔 You Don't Follow Back", len(unfollowing))
+    col5.metric("🕓 All-time Unfollowers", len(all_time_unfollowers))
+
+    # -------------------------------
+    # Chart comparison
+    # -------------------------------
+    st.subheader("📊 Profile Comparison Overview")
+    labels = ["Following", "Followers", "Unfollowers", "Unfollowing", "All-time Unfollowers"]
+    values = [following_count, followers_count, len(unfollowers), len(unfollowing), len(all_time_unfollowers)]
+
+    fig, ax = plt.subplots()
+    ax.bar(labels, values)
+    ax.set_ylabel("Count")
+    ax.set_title(f"Comparison for @{username}")
+    st.pyplot(fig)
+
+    # -------------------------------
+    # Tabs
+    # -------------------------------
     st.divider()
-    tabs = st.tabs(["Doesn't Follow You Back", "You Don't Follow Back"])
+    tabs = st.tabs(["Doesn't Follow You Back", "You Don't Follow Back", "All-time Unfollowers"])
 
     def display_user_list(user_list, color):
         for u in user_list:
             c1, c2 = st.columns([1, 5])
             with c1:
-                if u.get("avatar"):
+                if isinstance(u, dict) and u.get("avatar"):
                     st.image(u["avatar"], width=45)
             with c2:
+                uname = u["username"] if isinstance(u, dict) else u
                 st.markdown(
                     f"<span style='color:{color};font-weight:600;'>"
-                    f"[{u['username']}](https://letterboxd.com/{u['username']}/)</span>",
+                    f"[{uname}](https://letterboxd.com/{uname}/)</span>",
                     unsafe_allow_html=True
                 )
 
-    # Tab 1: Doesn't Follow You Back
+    # Tab 1
     with tabs[0]:
         if unfollowers:
             st.caption("People you follow but they don't follow you back:")
             display_user_list(unfollowers, "#FF4C4C")
-            df = pd.DataFrame([u["username"] for u in unfollowers], columns=["username"])
-            st.download_button("Download CSV", df.to_csv(index=False), "unfollowers.csv")
         else:
-            st.success("Everyone you follow also follows you back! 🎉")
+            st.success("Everyone you follow also follows you back!")
 
-    # Tab 2: You Don't Follow Back
+    # Tab 2
     with tabs[1]:
         if unfollowing:
             st.caption("People who follow you but you don't follow them:")
             display_user_list(unfollowing, "#4C9EFF")
-            df = pd.DataFrame([u["username"] for u in unfollowing], columns=["username"])
-            st.download_button("Download CSV", df.to_csv(index=False), "unfollowing.csv")
         else:
-            st.success("You follow back everyone who follows you! 👍")
+            st.success("You follow back everyone who follows you!")
+
+    # Tab 3
+    with tabs[2]:
+        if all_time_unfollowers:
+            st.caption("People who used to follow you but no longer do:")
+            display_user_list(all_time_unfollowers, "#FF9900")
+        else:
+            st.success("No one has unfollowed you yet — nice!")
 
     st.divider()
     st.markdown(
-        "🐞 Found a bug? Contact me — Modified by **bynguts**, originally by [rafilajhh](https://letterboxd.com/rafilajhh/)"
+        "🐞 Found a bug? Contact — Made by [Bynguts](https://boxd.it/9BaD9)"
     )
