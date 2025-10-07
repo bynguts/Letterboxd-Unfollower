@@ -110,7 +110,7 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* 🌌 Efek background animasi slow glow */
+    /* 🌌 Aurora Glow Background */
     [data-testid="stAppViewContainer"]::before {
         content: "";
         position: fixed;
@@ -118,18 +118,20 @@ st.markdown("""
         left: 0;
         width: 200%;
         height: 200%;
-        background: radial-gradient(circle at 30% 30%, rgba(255, 100, 150, 0.08), transparent 60%),
-                    radial-gradient(circle at 70% 70%, rgba(100, 200, 255, 0.08), transparent 60%);
-        animation: slowMove 20s infinite ease-in-out alternate;
+        background: radial-gradient(circle at 30% 30%, rgba(61, 220, 132, 0.15), transparent 60%),
+                    radial-gradient(circle at 70% 60%, rgba(76, 158, 255, 0.12), transparent 60%),
+                    radial-gradient(circle at 50% 80%, rgba(122, 95, 255, 0.10), transparent 70%);
+        animation: auroraMove 25s ease-in-out infinite alternate;
         z-index: -1;
         transform: translate(-25%, -25%);
         pointer-events: none;
+        filter: blur(60px);
     }
 
-    @keyframes slowMove {
-        0% { transform: translate(-25%, -25%) scale(1); }
-        50% { transform: translate(-20%, -30%) scale(1.05); }
-        100% { transform: translate(-25%, -25%) scale(1); }
+    @keyframes auroraMove {
+        0% { transform: translate(-20%, -20%) scale(1); }
+        50% { transform: translate(-15%, -25%) scale(1.05); }
+        100% { transform: translate(-20%, -20%) scale(1); }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -287,6 +289,7 @@ if check_btn and username:
         "<a href='https://boxd.it/9BaD9' style='color:#1db954;'>Bynguts</a></p>",
         unsafe_allow_html=True,
     )
+
 
 
 
