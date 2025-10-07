@@ -109,8 +109,31 @@ st.markdown("""
         background-color: #1a1a1a;
         margin-bottom: 20px;
     }
+
+    /* 🌌 Efek background animasi slow glow */
+    [data-testid="stAppViewContainer"]::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle at 30% 30%, rgba(255, 100, 150, 0.08), transparent 60%),
+                    radial-gradient(circle at 70% 70%, rgba(100, 200, 255, 0.08), transparent 60%);
+        animation: slowMove 20s infinite ease-in-out alternate;
+        z-index: -1;
+        transform: translate(-25%, -25%);
+        pointer-events: none;
+    }
+
+    @keyframes slowMove {
+        0% { transform: translate(-25%, -25%) scale(1); }
+        50% { transform: translate(-20%, -30%) scale(1.05); }
+        100% { transform: translate(-25%, -25%) scale(1); }
+    }
     </style>
 """, unsafe_allow_html=True)
+
 
 st.markdown("<h1 class='fade-in'>🎬 Letterboxd Unfollower Tracker</h1>", unsafe_allow_html=True)
 st.write("<p style='text-align:center;'>Track followers, unfollowers, and relationship trends — clean & visualized.</p>", unsafe_allow_html=True)
@@ -264,4 +287,5 @@ if check_btn and username:
         "<a href='https://boxd.it/9BaD9' style='color:#1db954;'>Bynguts</a></p>",
         unsafe_allow_html=True,
     )
+
 
