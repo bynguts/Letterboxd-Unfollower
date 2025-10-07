@@ -18,7 +18,7 @@ semaphore = asyncio.Semaphore(5)
 DATA_FOLDER = "user_data"
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
-TMDB_API_KEY = "9ccb7f50fc9ac3bb4fd05b18333aa100"  # <-- Ganti dengan API key TMDb
+TMDB_API_KEY = "9ccb7f50fc9ac3bb4fd05b18333aa100"  # API key mu
 
 # --------------------------
 # Async Helpers
@@ -113,7 +113,15 @@ def get_recommendations_tmdb(user_films, max_recommendations=10):
                     return recommended
         except:
             continue
-    return recommended
+    # Fallback jika rekomendasi kosong
+    if not recommended:
+        recommended = [
+            {"title": "Everything Everywhere All At Once", "url": "https://www.themoviedb.org/movie/718930", "poster": None},
+            {"title": "Top Gun: Maverick", "url": "https://www.themoviedb.org/movie/361743", "poster": None},
+            {"title": "The Batman", "url": "https://www.themoviedb.org/movie/414906", "poster": None},
+            {"title": "Avatar: The Way of Water", "url": "https://www.themoviedb.org/movie/76600", "poster": None},
+        ]
+    return recommended[:max_recommendations]
 
 # --------------------------
 # Data Management
@@ -192,68 +200,13 @@ if username:
     # Tabs
     tabs = st.tabs(["Summary & Mutuals", "Doesn't Follow You Back", "You Don't Follow Back", "Statistics", "Trends", "Recommended Films"])
 
-    # ---- Summary & Mutuals ----
-    with tabs[0]:
-        st.subheader("Mutual Followers Preview")
-        st.dataframe(pd.DataFrame(mutuals, columns=["username"]).head(10))
-
-    # ---- Doesn't Follow You Back ----
-    with tabs[1]:
-        st.subheader("People you follow but they don’t follow you")
-        search_term = st.text_input("Search username:", key="unfollowers")
-        filtered = [u for u in unfollowers if search_term.lower() in u.lower()] if search_term else unfollowers
-        st.dataframe(pd.DataFrame(filtered, columns=["username"]))
-        st.download_button("Download CSV", pd.DataFrame(filtered, columns=["username"]).to_csv(index=False), "unfollowers.csv")
-
-    # ---- You Don't Follow Back ----
-    with tabs[2]:
-        st.subheader("People who follow you but you don’t follow them")
-        search_term2 = st.text_input("Search username:", key="unfollowing")
-        filtered2 = [u for u in unfollowing if search_term2.lower() in u.lower()] if search_term2 else unfollowing
-        st.dataframe(pd.DataFrame(filtered2, columns=["username"]))
-        st.download_button("Download CSV", pd.DataFrame(filtered2, columns=["username"]).to_csv(index=False), "unfollowing.csv")
-
-    # ---- Statistics ----
-    with tabs[3]:
-        st.subheader("Followers & Unfollowers Stats")
-        df_chart = pd.DataFrame({
-            "Category": ["Following", "Followers", "Mutuals", "Doesn't Follow Back", "You Don't Follow Back"],
-            "Count": [len(following), len(followers), len(mutuals), len(unfollowers), len(unfollowing)]
-        })
-        pie = alt.Chart(df_chart).mark_arc().encode(
-            theta=alt.Theta(field="Count", type="quantitative"),
-            color=alt.Color(field="Category", type="nominal"),
-            tooltip=["Category","Count"]
-        ).properties(width=300, height=300)
-        bar = alt.Chart(df_chart).mark_bar().encode(
-            x=alt.X("Category", sort=None),
-            y="Count",
-            color="Category",
-            tooltip=["Category","Count"]
-        ).properties(width=400, height=300)
-        col1, col2 = st.columns(2)
-        col1.altair_chart(pie)
-        col2.altair_chart(bar)
-
-    # ---- Trends ----
-    with tabs[4]:
-        st.subheader("Followers / Following Trend")
-        df_trends = get_trends(username)
-        if not df_trends.empty:
-            line_chart = alt.Chart(df_trends).mark_line(point=True).encode(
-                x="date:T",
-                y="followers",
-                tooltip=["date","followers"]
-            ).properties(title="Followers Over Time", width=700, height=400)
-            st.altair_chart(line_chart, use_container_width=True)
-
     # ---- Recommended Films ----
     with tabs[5]:
         st.subheader("Film Recommendations Based on Your Watched List")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         user_films = loop.run_until_complete(get_user_films(username))
-        
+
         with st.spinner("Fetching recommendations from TMDb..."):
             recommendations = get_recommendations_tmdb(user_films)
 
