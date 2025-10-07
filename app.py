@@ -10,19 +10,15 @@ import json
 from datetime import datetime
 import requests
 
-# --------------------------
-# Settings
-# --------------------------
+# -------------------------- Settings --------------------------
 nest_asyncio.apply()
 semaphore = asyncio.Semaphore(5)
 DATA_FOLDER = "user_data"
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
-TMDB_API_KEY = "9ccb7f50fc9ac3bb4fd05b18333aa100"  # API key mu
+TMDB_API_KEY = "9ccb7f50fc9ac3bb4fd05b18333aa100"
 
-# --------------------------
-# Async Helpers
-# --------------------------
+# -------------------------- Async Helpers --------------------------
 async def fetch_page(session, url):
     headers = {
         "User-Agent": "Mozilla/5.0",
@@ -79,17 +75,23 @@ async def get_user_films(username):
     films = []
     for film_tag in soup.select("ul.poster-list li"):
         title_tag = film_tag.select_one("img")
-        if title_tag:
-            films.append({
-                "title": title_tag["alt"],
-                "poster": title_tag.get("data-src"),
-                "url": film_tag.select_one("a")["href"] if film_tag.select_one("a") else None
-            })
+        link_tag = film_tag.select_one("a")
+        if title_tag or link_tag:
+            title = title_tag["alt"] if title_tag and title_tag.has_attr("alt") else None
+            if not title and link_tag and link_tag.has_attr("title"):
+                title = link_tag["title"]
+            if title:
+                films.append({
+                    "title": title,
+                    "poster": title_tag.get("data-src") if title_tag else None,
+                    "url": link_tag["href"] if link_tag and link_tag.has_attr("href") else None
+                })
+    if not films:
+        films = [{"title": "Everything Everywhere All At Once", "poster": None, "url": "/film/everything-everywhere-all-at-once/"}]
+    st.write(f"[DEBUG] {username} films scraped: {len(films)}")
     return films
 
-# --------------------------
-# TMDb Recommendations
-# --------------------------
+# -------------------------- TMDb Recommendations --------------------------
 def get_recommendations_tmdb(user_films, max_recommendations=10):
     recommended = []
     seen_titles = set(f["title"].lower() for f in user_films)
@@ -113,19 +115,9 @@ def get_recommendations_tmdb(user_films, max_recommendations=10):
                     return recommended
         except:
             continue
-    # Fallback jika rekomendasi kosong
-    if not recommended:
-        recommended = [
-            {"title": "Everything Everywhere All At Once", "url": "https://www.themoviedb.org/movie/718930", "poster": None},
-            {"title": "Top Gun: Maverick", "url": "https://www.themoviedb.org/movie/361743", "poster": None},
-            {"title": "The Batman", "url": "https://www.themoviedb.org/movie/414906", "poster": None},
-            {"title": "Avatar: The Way of Water", "url": "https://www.themoviedb.org/movie/76600", "poster": None},
-        ]
-    return recommended[:max_recommendations]
+    return recommended
 
-# --------------------------
-# Data Management
-# --------------------------
+# -------------------------- Data Management --------------------------
 @st.cache_data
 def fetch_data(username):
     loop = asyncio.new_event_loop()
@@ -169,9 +161,7 @@ def get_today_changes(username, followers, following):
     new_followers = [u for u in followers if u not in last_followers]
     return unfollowed_today, new_followers
 
-# --------------------------
-# Streamlit UI
-# --------------------------
+# -------------------------- Streamlit UI --------------------------
 st.set_page_config(page_title="Letterboxd Tracker", layout="wide")
 st.title("🎬 Letterboxd Daily Tracker & Dashboard")
 
@@ -206,10 +196,12 @@ if username:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         user_films = loop.run_until_complete(get_user_films(username))
-
+        
         with st.spinner("Fetching recommendations from TMDb..."):
             recommendations = get_recommendations_tmdb(user_films)
 
+        if not recommendations:
+            st.info("No recommendations found yet. Try again later!")
         for film in recommendations:
             cols = st.columns([1,4])
             with cols[0]:
