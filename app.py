@@ -90,18 +90,25 @@ st.set_page_config(page_title="Letterboxd Unfollower Tracker", layout="centered"
 
 st.markdown("""
     <style>
-    body {background-color:#0e0e0e;color:#f5f5f5;}
+    /* --- Base layout --- */
+    body {
+        background-color: #0e0e0e;
+        color: #f5f5f5;
+        overflow-x: hidden;
+    }
     .main {
         max-width: 850px;
         margin: auto;
-        background-color: #141414;
+        background-color: rgba(20, 20, 20, 0.92);
         padding: 40px;
         border-radius: 20px;
-        box-shadow: 0 0 25px rgba(0,0,0,0.5);
+        box-shadow: 0 0 25px rgba(0,0,0,0.6);
+        backdrop-filter: blur(8px);
     }
-    h1,h2,h3 {text-align:center;}
-    .fade-in {animation: fadeIn 1.5s ease;}
-    @keyframes fadeIn {from {opacity:0;} to {opacity:1;}}
+    h1, h2, h3 { text-align: center; }
+    .fade-in { animation: fadeIn 1.5s ease; }
+    @keyframes fadeIn { from {opacity:0;} to {opacity:1;} }
+
     .activity-box {
         border: 1px solid #333;
         border-radius: 10px;
@@ -110,31 +117,37 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* 🌌 Aurora Glow Background */
-    [data-testid="stAppViewContainer"]::before {
+    /* 🌌 Aurora Background */
+    [data-testid="stApp"]::before {
         content: "";
         position: fixed;
         top: 0;
         left: 0;
-        width: 200%;
-        height: 200%;
+        width: 120%;
+        height: 120%;
         background: radial-gradient(circle at 30% 30%, rgba(61, 220, 132, 0.15), transparent 60%),
                     radial-gradient(circle at 70% 60%, rgba(76, 158, 255, 0.12), transparent 60%),
                     radial-gradient(circle at 50% 80%, rgba(122, 95, 255, 0.10), transparent 70%);
+        filter: blur(80px);
         animation: auroraMove 25s ease-in-out infinite alternate;
-        z-index: -1;
-        transform: translate(-25%, -25%);
+        z-index: 0;
         pointer-events: none;
-        filter: blur(60px);
     }
 
     @keyframes auroraMove {
-        0% { transform: translate(-20%, -20%) scale(1); }
-        50% { transform: translate(-15%, -25%) scale(1.05); }
-        100% { transform: translate(-20%, -20%) scale(1); }
+        0% { transform: translate(-5%, -5%) scale(1); }
+        50% { transform: translate(5%, 5%) scale(1.05); }
+        100% { transform: translate(-5%, -5%) scale(1); }
+    }
+
+    /* make app container above aurora */
+    [data-testid="stAppViewContainer"] {
+        position: relative;
+        z-index: 1;
     }
     </style>
 """, unsafe_allow_html=True)
+
 
 
 st.markdown("<h1 class='fade-in'>🎬 Letterboxd Unfollower Tracker</h1>", unsafe_allow_html=True)
@@ -289,6 +302,7 @@ if check_btn and username:
         "<a href='https://boxd.it/9BaD9' style='color:#1db954;'>Bynguts</a></p>",
         unsafe_allow_html=True,
     )
+
 
 
 
