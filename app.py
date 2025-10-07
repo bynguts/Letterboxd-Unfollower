@@ -137,12 +137,12 @@ st.divider()
 
 username = st.text_input("👤 Enter your Letterboxd username:", placeholder="e.g. rafilajhh", key="uname")
 center_btn = st.columns(3)[1]
-go = center_btn.button("✨ Check Now!", use_container_width=True)
+check_btn = center_btn.button("✨ Check Now!", use_container_width=True)
 
 # =======================================
 # MAIN EXECUTION
 # =======================================
-if go and username:
+if check_btn and username:
     with st.status(f"Fetching data for @{username}...", expanded=True) as status:
         with st.spinner("Loading profile..."):
             loop = asyncio.new_event_loop()
@@ -161,6 +161,7 @@ if go and username:
     old_data = pd.read_csv(follower_file) if os.path.exists(follower_file) else pd.DataFrame(columns=["username", "last_seen_date"])
     old_followers = set(old_data["username"].tolist())
 
+    # --- Track New and Lost Followers ---
     new_followers = set_followers - old_followers
     recent_follows = [{"username": u, "follow_date": current_date} for u in new_followers]
     recent_unfollows = old_followers - set_followers
@@ -200,7 +201,7 @@ if go and username:
         )
         st.altair_chart(chart, use_container_width=True)
 
-    # --- Metrics ---
+    # ---------- METRICS ----------
     unfollowers = [u for u in following if u["username"] not in set_followers]
     unfollowing = [u for u in followers if u["username"] not in set_following]
     all_time_unfollowers = list(old_followers - set_followers)
@@ -258,7 +259,7 @@ if go and username:
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # ---------- METRICS ----------
+    # ---------- SUMMARY METRICS ----------
     st.markdown("<div class='fade-in'>", unsafe_allow_html=True)
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("🚀 Following", following_count)
