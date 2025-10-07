@@ -8,17 +8,26 @@ import altair as alt
 import os
 import json
 from datetime import datetime
+import requests
 
+# --------------------------
+# Settings
+# --------------------------
 nest_asyncio.apply()
 semaphore = asyncio.Semaphore(5)
 DATA_FOLDER = "user_data"
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
+TMDB_API_KEY = "9ccb7f50fc9ac3bb4fd05b18333aa100"  # <-- Ganti dengan API key TMDb
+
 # --------------------------
 # Async Helpers
 # --------------------------
 async def fetch_page(session, url):
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "*/*"}
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*"
+    }
     timeout = aiohttp.ClientTimeout(total=60)
     async with semaphore:
         try:
@@ -37,34 +46,32 @@ async def get_profile_data(username):
             html = await response.text()
     soup = BeautifulSoup(html, "html.parser")
     def get_count(tab):
-        selector = f'a[href="/{username.lower()}/{tab}/"] > span.value'
-        tag = soup.select_one(selector)
+        tag = soup.select_one(f'a[href="/{username.lower()}/{tab}/"] > span.value')
         return int(tag.text.replace(',', '')) if tag else 0
     max_pages_followers = int(get_count("followers") / 25) + 1
     max_pages_following = int(get_count("following") / 25) + 1
     return max_pages_followers, max_pages_following
 
 async def get_user_list(username, tab, max_pages_followers, max_pages_following):
-    urls = [f"https://letterboxd.com/{username}/{tab}/page/{page}/"
-            for page in range(1, (max_pages_followers if tab=="followers" else max_pages_following)+1)]
+    urls = [
+        f"https://letterboxd.com/{username}/{tab}/page/{page}/"
+        for page in range(1, (max_pages_followers if tab=="followers" else max_pages_following)+1)
+    ]
     user_list = []
     async with aiohttp.ClientSession() as session:
-        for url in urls:
-            html = await fetch_page(session, url)
+        htmls = await asyncio.gather(*[fetch_page(session, url) for url in urls])
+        for html in htmls:
             if not html:
                 continue
             soup = BeautifulSoup(html, "html.parser")
             user_blocks = soup.select("div.person-summary")
             for user in user_blocks:
-                username_lb = user.select_one("a.avatar")["href"].strip("/") if user.select_one("a.avatar") else None
-                if username_lb:
-                    user_list.append(username_lb)
+                avatar_tag = user.select_one("a.avatar")
+                if avatar_tag and avatar_tag.has_attr("href"):
+                    user_list.append(avatar_tag["href"].strip("/"))
     return user_list
 
 async def get_user_films(username):
-    """
-    Ambil daftar film yang ditonton / di-review user.
-    """
     url = f"https://letterboxd.com/{username}/films/"
     async with aiohttp.ClientSession() as session:
         html = await fetch_page(session, url)
@@ -75,18 +82,38 @@ async def get_user_films(username):
         if title_tag:
             films.append({
                 "title": title_tag["alt"],
-                "poster": title_tag["data-src"] if title_tag.has_attr("data-src") else None,
+                "poster": title_tag.get("data-src"),
                 "url": film_tag.select_one("a")["href"] if film_tag.select_one("a") else None
             })
     return films
 
-def recommend_films(user_films, popular_films):
-    """
-    Simple recommendation: match titles already watched for demo.
-    """
-    watched_titles = set(f["title"] for f in user_films)
-    recommendations = [f for f in popular_films if f["title"] not in watched_titles]
-    return recommendations[:10]
+# --------------------------
+# TMDb Recommendations
+# --------------------------
+def get_recommendations_tmdb(user_films, max_recommendations=10):
+    recommended = []
+    seen_titles = set(f["title"].lower() for f in user_films)
+    for film in user_films:
+        query = film["title"]
+        url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}"
+        try:
+            res = requests.get(url).json()
+            results = res.get("results", [])
+            for r in results[:3]:
+                title = r["title"]
+                if title.lower() in seen_titles:
+                    continue
+                recommended.append({
+                    "title": title,
+                    "poster": f"https://image.tmdb.org/t/p/w200{r['poster_path']}" if r.get("poster_path") else None,
+                    "url": f"https://www.themoviedb.org/movie/{r['id']}"
+                })
+                seen_titles.add(title.lower())
+                if len(recommended) >= max_recommendations:
+                    return recommended
+        except:
+            continue
+    return recommended
 
 # --------------------------
 # Data Management
@@ -223,23 +250,17 @@ if username:
     # ---- Recommended Films ----
     with tabs[5]:
         st.subheader("Film Recommendations Based on Your Watched List")
-        with st.spinner("Fetching your watched films..."):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            user_films = loop.run_until_complete(get_user_films(username))
-        # Example popular films (hardcoded demo)
-        popular_films = [
-            {"title": "Everything Everywhere All At Once", "url": "/film/everything-everywhere-all-at-once/", "poster": None},
-            {"title": "Top Gun: Maverick", "url": "/film/top-gun-maverick/", "poster": None},
-            {"title": "The Batman", "url": "/film/the-batman-2022/", "poster": None},
-            {"title": "Avatar: The Way of Water", "url": "/film/avatar-the-way-of-water/", "poster": None},
-            {"title": "Puss in Boots: The Last Wish", "url": "/film/puss-in-boots-the-last-wish/", "poster": None},
-        ]
-        recommendations = recommend_films(user_films, popular_films)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        user_films = loop.run_until_complete(get_user_films(username))
+        
+        with st.spinner("Fetching recommendations from TMDb..."):
+            recommendations = get_recommendations_tmdb(user_films)
+
         for film in recommendations:
             cols = st.columns([1,4])
             with cols[0]:
                 if film.get("poster"):
                     st.image(film["poster"], width=50)
             with cols[1]:
-                st.markdown(f"[{film['title']}](https://letterboxd.com{film['url']})")
+                st.markdown(f"[{film['title']}]({film['url']})")
