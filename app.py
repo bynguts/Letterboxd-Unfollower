@@ -61,24 +61,6 @@ async def get_user_list(username, tab, max_pages_followers, max_pages_following)
                     user_list.append(username_lb)
     return user_list
 
-async def get_favorite_films(username, max_pages=2):
-    urls = [f"https://letterboxd.com/{username}/films/favorites/page/{p}/" for p in range(1, max_pages+1)]
-    films = []
-    async with aiohttp.ClientSession() as session:
-        for url in urls:
-            html = await fetch_page(session, url)
-            if not html:
-                continue
-            soup = BeautifulSoup(html, "html.parser")
-            film_blocks = soup.select("li.film-detail")
-            for film in film_blocks:
-                title_tag = film.select_one("h3 a")
-                title = title_tag.text.strip() if title_tag else None
-                link = "https://letterboxd.com" + title_tag['href'] if title_tag and title_tag.has_attr('href') else None
-                if title:
-                    films.append({"title": title, "link": link})
-    return films
-
 @st.cache_data
 def fetch_data(username):
     loop = asyncio.new_event_loop()
@@ -126,24 +108,49 @@ def get_today_changes(username, followers, following):
     return unfollowed_today, new_followers
 
 # --------------------------
+# Recommended Films
+# --------------------------
+async def get_user_films(username, max_pages=5):
+    films = []
+    urls = [f"https://letterboxd.com/{username}/films/page/{page}/" for page in range(1, max_pages+1)]
+    async with aiohttp.ClientSession() as session:
+        for url in urls:
+            html = await fetch_page(session, url)
+            if not html:
+                continue
+            soup = BeautifulSoup(html, "html.parser")
+            film_blocks = soup.select("li.poster-container")
+            for film in film_blocks:
+                a_tag = film.select_one("div.poster > a")
+                if a_tag:
+                    title = a_tag["title"]
+                    link = a_tag["href"]
+                    img_tag = film.select_one("img")
+                    poster = img_tag["data-src"] if img_tag and img_tag.has_attr("data-src") else None
+                    films.append({"title": title, "url": link, "poster": poster})
+    return films
+
+def recommend_films_auto(user_films, popular_films):
+    watched_titles = {film["title"] for film in user_films}
+    return [film for film in popular_films if film["title"] not in watched_titles]
+
+# --------------------------
 # Streamlit UI
 # --------------------------
-st.set_page_config(page_title="Letterboxd Tracker", layout="wide")
-st.title("🎬 Letterboxd Daily Tracker & Dashboard")
+st.set_page_config(page_title="Letterboxd Tracker & Recommendations", layout="wide")
+st.title("🎬 Letterboxd Tracker & Recommendations")
 
 username = st.text_input("Letterboxd username:").strip()
 if username:
     with st.spinner(f"Fetching data for {username}..."):
         followers, following = fetch_data(username)
         save_history(username, followers, following)
-        favorite_films = asyncio.run(get_favorite_films(username))
 
     set_followers = set(followers)
     set_following = set(following)
     unfollowers = [u for u in following if u not in set_followers]
     unfollowing = [u for u in followers if u not in set_following]
     mutuals = [u for u in followers if u in set_following]
-
     unfollowed_today, new_followers_today = get_today_changes(username, followers, following)
 
     # Stats Cards
@@ -155,7 +162,7 @@ if username:
     col5.metric("New Followers Today", len(new_followers_today))
 
     # Tabs
-    tabs = st.tabs(["Summary & Mutuals", "Doesn't Follow You Back", "You Don't Follow Back", "Statistics", "Trends", "Recommended Films"])
+    tabs = st.tabs(["Summary & Mutuals", "Doesn't Follow You Back", "You Don't Follow Back", "Statistics", "Trends", "Recommendations"])
 
     # ---- Summary & Mutuals ----
     with tabs[0]:
@@ -212,11 +219,30 @@ if username:
             ).properties(title="Followers Over Time", width=700, height=400)
             st.altair_chart(line_chart, use_container_width=True)
 
-    # ---- Recommended Films ----
+    # ---- Recommendations ----
     with tabs[5]:
-        st.subheader("🎬 Recommended Films")
-        if favorite_films:
-            for f in favorite_films[:20]:
-                st.markdown(f"- [{f['title']}]({f['link']})")
+        st.subheader("🎥 Film Recommendations Based on Your Watched List")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        user_films = loop.run_until_complete(get_user_films(username, max_pages=5))
+
+        # Popular films (contoh)
+        popular_films = [
+            {"title": "Everything Everywhere All At Once", "url": "/film/everything-everywhere-all-at-once/","poster":"https://m.media-amazon.com/images/I/81E0q8Zj0JL._AC_SY679_.jpg"},
+            {"title": "Top Gun: Maverick", "url": "/film/top-gun-maverick/","poster":"https://m.media-amazon.com/images/I/71wE8cwPQQL._AC_SY679_.jpg"},
+            {"title": "The Batman", "url": "/film/the-batman-2022/","poster":"https://m.media-amazon.com/images/I/71p1w+ULkNL._AC_SY679_.jpg"},
+        ]
+        recommendations = recommend_films_auto(user_films, popular_films)
+
+        if recommendations:
+            for film in recommendations:
+                cols = st.columns([1,4])
+                with cols[0]:
+                    if film.get("poster"):
+                        st.image(film["poster"], width=60)
+                with cols[1]:
+                    st.markdown(f"[**{film['title']}**](https://letterboxd.com{film['url']})", unsafe_allow_html=True)
         else:
-            st.info("No favorite films found for this user.")
+            st.success("No recommendations available. You’ve watched all popular films listed!")
+
+st.markdown("🐞 Found a bug? Contact me — Made by [Bynguts](https://boxd.it/9BaD9)")
