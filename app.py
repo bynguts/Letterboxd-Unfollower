@@ -139,7 +139,7 @@ st.markdown("""
 
 
 st.markdown("<h1 class='fade-in'>🎬 Letterboxd Unfollower Tracker</h1>", unsafe_allow_html=True)
-st.write("<p style='text-align:center;'>Track followers, unfollowers, and relationship trends — clean & visualized.</p>", unsafe_allow_html=True)
+st.write("<p style='text-align:center;'>Track followers, unfollowers, and relationship with trends clean & visualized.</p>", unsafe_allow_html=True)
 st.divider()
 
 username = st.text_input("👤 Enter your Letterboxd username:", placeholder="e.g. hsnf", key="uname")
@@ -290,6 +290,7 @@ if check_btn and username:
         "<a href='https://boxd.it/9BaD9' style='color:#1db954;'>Bynguts</a></p>",
         unsafe_allow_html=True,
     )
+
 
 
 
